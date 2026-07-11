@@ -297,23 +297,18 @@ class LET_Statement:
         # index 0 is our let statement
         # index 1 should be the variable name
         # index 2 should be an "=" aka EQUAL_Operator
-        # index 3 should be the literal value
+        # index 3+ should be the literal value
         setValue = 0
 
         typeKeyword1 = type(keywords[1])
         typeKeyword2 = type(keywords[2])
-        typeKeyword3 = type(keywords[3])
         if typeKeyword1 != VARIABLE:
             raise BASIC_Errors.ExpectedKeywordTypeException(f"Expected a variable name, instead got a {typeKeyword1}")
         if typeKeyword2 != EQUAL_Operator:
             raise BASIC_Errors.ExpectedKeywordTypeException(f"Expected an equals sign, instead got a {typeKeyword2}")
         
-        if typeKeyword3 == float:
-            setValue = keywords[3]
-        elif typeKeyword3 == VARIABLE:
-            setValue = keywords[3].getValue()
-        else:
-            raise BASIC_Errors.ExpectedKeywordTypeException(f"Expected a float or variable name, instead got a {typeKeyword3}")
+        chained = ChainedKeywords(keywords[3:])
+        setValue = chained.evaluate()
 
         # 3 to say we read 3 keywords
         return BASIC_ReturnData(None, (keywords[1].getName(), setValue))
