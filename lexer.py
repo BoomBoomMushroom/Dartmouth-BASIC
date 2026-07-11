@@ -21,12 +21,19 @@ class BASIC_Line:
 
 
 class Lexer:
-    def __init__(self, programFileName: str=None):
+    def __init__(self):
         self.lines: dict[int, BASIC_Line] = {}
-        
+        self.linesText: dict[int, str] = {}
+
+    def loadFile(self, programFileName: str=None):
         if programFileName == None: return
         print(f"Lexing {programFileName}")
-        with open(programFileName, "r") as f: self.parseProgramText(f.read())
+        with open(programFileName, "r") as f: self.loadText(f.read())
+    
+    def loadText(self, programText: str=None):
+        if programText == None: return
+        self.parseProgramText(programText)
+
 
     def getLine(self, lineNum: int) -> BASIC_Line:
         return self.lines.get(lineNum, None)
@@ -173,7 +180,10 @@ class Lexer:
         return breakdown
 
     def parseProgramText(self, contents: str):
-        self.lines = {} # clear the program before we add stuff
+        # clear the program before we add stuff
+        self.lines = {}
+        self.linesText = {}
+
         hasStopInstruction = False
         previousLineNumber = -1
         contentLines = contents.split("\n")
@@ -209,6 +219,7 @@ class Lexer:
 
             programLine = BASIC_Line(lineNum, keywords)
             self.lines[lineNum] = programLine
+            self.linesText[lineNum] = line
             previousLineNumber = lineNum
 
         if hasStopInstruction == False:
