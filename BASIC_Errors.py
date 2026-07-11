@@ -24,3 +24,23 @@ class InvalidExpressionException(Exception):
         self.message = message
         super().__init__(self.message)
 
+class NoMoreDataException(Exception):
+    def __init__(self, message):
+        self.message = message
+        super().__init__(self.message)
+
+class NotInSubroutubeException(Exception):
+    def __init__(self, message):
+        self.message = message
+        super().__init__(self.message)
+
+class NotInForLoopException(Exception):
+    def __init__(self, message):
+        self.message = message
+        super().__init__(self.message)
+
+class UndefinedLineException(Exception):
+    def __init__(self, message):
+        self.message = message
+        super().__init__(self.message)
+

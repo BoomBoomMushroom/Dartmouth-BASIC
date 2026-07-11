@@ -1,10 +1,20 @@
+import math
+import random
+
 import BASIC_Errors
+
+def randomFloat(seed):
+    # seed > 0 -> next random number
+    # seed = 0 -> return the previous random number
+    # seed < 0 -> new rng seed with the passed seed and return random number from that seed
+
+    return random.random()
 
 class BASIC_ReturnData:
     def __init__(
             self, pcSet: int=None, variableSet: tuple[str,float]=None, stopExecution=False, createdLoop=None,
             continueLoopVarName: str=None, addAddressToReturnStack: bool=False,
-            returnToAddressFromReturnStack: bool=False
+            returnToAddressFromReturnStack: bool=False, skipLoopVarName: str=None
     ):
         self.pcSet = pcSet # NewPcValue
         self.variableSet = variableSet # (VariableName, NewValue)
@@ -12,6 +22,7 @@ class BASIC_ReturnData:
         
         self.createdLoop = createdLoop
         self.continueLoopVarName = continueLoopVarName
+        self.skipLoopVarName = skipLoopVarName
         
         self.addAddressToReturnStack = addAddressToReturnStack
         self.returnToAddressFromReturnStack = returnToAddressFromReturnStack
@@ -27,19 +38,42 @@ class BASIC_Loop:
     def setReturnPC(self, setPc):
         self.setPc = setPc
 
+class BASIC_DATA:
+    DATA: list[float] = []
+    POINTER: int = 0
+
+    @classmethod
+    def extendData(cls, newData: list[float]):
+        cls.DATA.extend(newData)
+    
+    @classmethod
+    def readData(cls) -> float:
+        if cls.POINTER >= len(cls.DATA):
+            raise BASIC_Errors.NoMoreDataException(f"No more data left to read! {cls.POINTER=}")
+
+        out = cls.DATA[cls.POINTER]
+        cls.POINTER += 1
+        return out
+
 class VARIABLE:
-    variables = {} # should be shared with the interpreter.py
+    VARIABLES = {} # should be shared with the interpreter.py
     def __init__(self, name: str, isNegative=False):
         self.name = name
         self.isNegative = isNegative
     
     def __str__(self): return str(self.getValue())
 
+    def __float__(self): return self.getValue()
+
     def getName(self) -> str:
         return self.name
 
+    @classmethod
+    def writeValue(cls, varName: str, newValue: float):
+        cls.VARIABLES[varName] = newValue
+
     def getValue(self) -> float:
-        value = self.variables.get(self.name, 0) # default value is 0, since it would be all 0 bits i guess
+        value = self.VARIABLES.get(self.name, 0) # default value is 0, since it would be all 0 bits i guess
         if self.isNegative: value *= -1
 
         return value
@@ -71,26 +105,31 @@ class ChainedKeywords:
         closeGroups: int = 0
         prevKwType = None
 
-        for kw in self.keywords:
+        validatedKeywords = []
+        for i, kw in enumerate(self.keywords):
             kwType = type(kw)
             isOperation = self.isTypeOperation(kwType)
             isVarOrLiteral = self.isTypeVarOrLiteral(kwType)
-
             if prevKwType != None:
                 if isOperation and self.isTypeOperation(prevKwType):
                     raise BASIC_Errors.InvalidExpressionException("Cannot have two operations in a row!")
                 if isVarOrLiteral and self.isTypeVarOrLiteral(prevKwType):
-                    raise BASIC_Errors.InvalidExpressionException("Cannot have two variables/literals in a row!")
+                    if float(kw) < 0:
+                        # Parsing with a minus gave us weird stuff, we can add an ADD operator to fix it
+                        validatedKeywords.append( ADD_Operator() )
+                    else: raise BASIC_Errors.InvalidExpressionException("Cannot have two variables/literals in a row!")
             
             if type(kw) == GROUPING_OPEN_Operator: openGroups += 1
             elif type(kw) == GROUPING_CLOSE_Operator: closeGroups += 1
             
             if closeGroups > openGroups: raise BASIC_Errors.InvalidExpressionException("Invalid pairing of open-close group characters")
 
+            validatedKeywords.append(kw)
             prevKwType = kwType
 
         # after we've gone through all the keywords check if it's valid
         if closeGroups != openGroups: raise BASIC_Errors.InvalidExpressionException("Invalid pairing of open-close group characters")
+        self.keywords = validatedKeywords
         return True # We've made it here, our chain of keywords is valid!
 
     def evaluate(self) -> float:
@@ -99,7 +138,7 @@ class ChainedKeywords:
         prevKwType = None
 
         outEquation = ""
-        for kw in self.keywords:
+        for i,kw in enumerate(self.keywords):
             kwType = type(kw)
             isOperation = self.isTypeOperation(kwType)
             isVarOrLiteral = self.isTypeVarOrLiteral(kwType)
@@ -115,7 +154,7 @@ class ChainedKeywords:
             
             if closeGroups > openGroups: raise BASIC_Errors.InvalidExpressionException("Invalid pairing of open-close group characters")
             
-            toAdd = f" {str(kw)}"
+            toAdd = f" {str(kw)} "
             if isVarOrLiteral: toAdd = f" ({toAdd[1:]})" # surround literals w/ parentheses so -3 ** 2 = 9 not -9
             outEquation += toAdd
 
@@ -124,8 +163,64 @@ class ChainedKeywords:
         # after we've gone through all the keywords check if it's valid
         if closeGroups != openGroups: raise BASIC_Errors.InvalidExpressionException("Invalid pairing of open-close group characters")
         
-        result = eval(outEquation) # yes ik eval is evil but i REALLY dont want to write a parser atm 😭
+        safeFunctions = {
+            "abs": abs,
+            "atn": math.atan,
+            "cos": math.cos,
+            "exp": math.exp,
+            "int": math.floor,
+            "log": math.log,
+            "rnd": randomFloat,
+            "sin": math.sin,
+            "sqr": math.sqrt,
+            "tan": math.tan,
+        }
+        result = eval(outEquation, {}, safeFunctions) # yes ik eval is evil but i REALLY dont want to write a parser atm 😭
         return result
+
+class ListKeywords:
+    def __init__(self, keywords: list, allowVariables: bool=False, returnVarNames: bool=False):
+        self.allowVariables = allowVariables
+        self.returnVarNames = returnVarNames
+        self.keywords = keywords
+        self.validate()
+    
+    def validate(self):
+        expectComma = False
+        for kw in self.keywords:
+            kwType = type(kw)
+
+            if expectComma == True:
+                if kwType != COMMA:
+                    raise BASIC_Errors.ExpectedKeywordTypeException(f"Expected a Comma, instead got {kwType}!")
+                # else we're good, continue
+                expectComma = False
+            else:
+                isFloat = kwType == float
+                isVar = kwType == VARIABLE
+                passes = isFloat or (isVar and self.allowVariables)
+
+                if passes == False:
+                    orVar = " or Variable Name" if self.allowVariables else ""
+                    raise BASIC_Errors.ExpectedKeywordTypeException(f"Expected a Literal{orVar}, instead got {kwType}!")
+                # else we're good
+                expectComma = True
+        
+        return True
+
+    def evaluate(self) -> list[float]:
+        # since we've already validated this we can can just go through and append each value and float we see
+        # if we dont allow variables it would raise and error in the validate so we will be fine
+        values: list[float] = []
+        for kw in self.keywords:
+            kwType = type(kw)
+            if kwType == COMMA: continue
+            if kwType == float: values.append(kw)
+            if kwType == VARIABLE:
+                if self.returnVarNames: values.append(kw.getName())
+                else: values.append(kw.getValue())
+        
+        return values
 
 # Statements
 class DEF_Statement:
@@ -179,7 +274,12 @@ class FOR_Statement:
 
         end, increment = keywords[4].execute(keywords[4:])
         loop = BASIC_Loop(keywords[1].getName(), keywords[3], end, increment)
-        return BASIC_ReturnData(variableSet=(loop.variableName, loop.start), createdLoop=loop)
+
+        # check if loop is good, if not then return this skip data
+        # return BASIC_ReturnData(skipLoopVarName=loop.variableName)
+
+        VARIABLE.writeValue(loop.variableName, loop.start)
+        return BASIC_ReturnData(createdLoop=loop)
 
 class TO_Statement:
     def __init__(self):
@@ -311,7 +411,8 @@ class LET_Statement:
         setValue = chained.evaluate()
 
         # 3 to say we read 3 keywords
-        return BASIC_ReturnData(None, (keywords[1].getName(), setValue))
+        VARIABLE.writeValue(keywords[1].getName(), setValue)
+        return BASIC_ReturnData()
 
 class PRINT_Statement:
     def __init__(self):
@@ -320,17 +421,51 @@ class PRINT_Statement:
     def execute(self, keywords: list):
         # index 0 is our print class
         # all the other indexes is what we print
-        chained = ChainedKeywords(keywords[1:])
-        result = chained.evaluate()
-        print(result)
+        chains = []
+        iterateKeywords = [SEMICOLON()] + keywords[1:] # add a semicolon at the front to latch a starting point
+        for kw in iterateKeywords:
+            if type(kw) == SEMICOLON:
+                chains.append([])
+                continue
+            chains[-1].append(kw) # add to the most recent chain
+
+        for chainRaw in chains:
+            if len(chainRaw) == 0: continue
+            chained = ChainedKeywords(chainRaw)
+            result = chained.evaluate()
+            print(result, end=" ") # default splitter is the space
+        print("") # for a new line
+        
         return None # This will just get replaced with an empty BASIC_ReturnData in the lexer
 
 class DATA_Statement:
     def __init__(self):
-        pass
+        self.hasBeenExecuted = False
+    
+    def execute(self, keywords):
+        if self.hasBeenExecuted == True: return BASIC_ReturnData() # alrady read, do nothing
+        
+        # index 0 is the `DATA` keyword
+        # then it alternates floats and commas, starting w/ a float first
+        list: ListKeywords = ListKeywords(keywords[1:], allowVariables=False)
+        evaluatedData = list.evaluate()
+
+        BASIC_DATA.extendData(evaluatedData)
+        self.hasBeenExecuted = True
 
 class READ_Statement:
-    def __init__(self):
+    def __init__(self): pass
+    def execute(self, keywords):
+        # index 0 is the `READ` keyword
+        # then it alternates variable names and commas
+        list: ListKeywords = ListKeywords(keywords[1:], allowVariables=True, returnVarNames=True)
+        varNames: list[str] = list.evaluate()
+
+        for name in varNames:
+            val: float = BASIC_DATA.readData()
+            VARIABLE.writeValue(name, val)
+            #print(f"\t{name} -> {val}")
+
         pass
 
 class REM_Statement:
@@ -409,125 +544,60 @@ class GROUPING_CLOSE_Operator:
     def __str__(self): return ")"
 
 # Functions
-import math
-import random
+class ABS_Function:
+    def __init__(self): pass
+    def __str__(self): return "abs"
 
-class ABS_Function():
-    def __init__(self, innerChain):
-        self.innerChain = innerChain
-    
-    def __str__(self):
-        chain: ChainedKeywords = ChainedKeywords(self.innerChain)
-        value = chain.evaluate()
-        value = abs(value)
+class ATN_Function:
+    def __init__(self): pass
+    def __str__(self): return "atn"
 
-        return str(value)
+class COS_Function:
+    def __init__(self): pass
+    def __str__(self): return "cos"
 
-class ATN_Function():
-    def __init__(self, innerChain):
-        self.innerChain = innerChain
-    
-    def __str__(self):
-        chain: ChainedKeywords = ChainedKeywords(self.innerChain)
-        value = chain.evaluate()
-        value = math.atan(value)
+class EXP_Function:
+    def __init__(self): pass
+    def __str__(self): return "exp"
 
-        return str(value)
+class INT_Function:
+    def __init__(self): pass
+    def __str__(self): return "int"
 
-class COS_Function():
-    def __init__(self, innerChain):
-        self.innerChain = innerChain
-    
-    def __str__(self):
-        chain: ChainedKeywords = ChainedKeywords(self.innerChain)
-        value = chain.evaluate()
-        value = math.cos(value)
+class LOG_Function:
+    def __init__(self): pass
+    def __str__(self): return "log"
 
-        return str(value)
+class RND_Function:
+    def __init__(self): pass
+    def __str__(self): return "rnd"
 
-class EXP_Function():
-    def __init__(self, innerChain):
-        self.innerChain = innerChain
-    
-    def __str__(self):
-        chain: ChainedKeywords = ChainedKeywords(self.innerChain)
-        value = chain.evaluate()
-        value = math.exp(value) # e^x
+class SIN_Function:
+    def __init__(self): pass
+    def __str__(self): return "sin"
 
-        return str(value)
+class SQR_Function:
+    def __init__(self): pass
+    def __str__(self): return "sqr"
 
-class INT_Function():
-    def __init__(self, innerChain):
-        self.innerChain = innerChain
-    
-    def __str__(self):
-        chain: ChainedKeywords = ChainedKeywords(self.innerChain)
-        value = chain.evaluate()
-        value = math.floor(value)
+class TAN_Function:
+    def __init__(self): pass
+    def __str__(self): return "tan"
 
-        return str(value)
+# Seperators
+class SEMICOLON:
+    def __init__(self): pass
 
-class LOG_Function():
-    def __init__(self, innerChain):
-        self.innerChain = innerChain
-    
-    def __str__(self):
-        chain: ChainedKeywords = ChainedKeywords(self.innerChain)
-        value = chain.evaluate()
-        value = math.log(value) # base e, ln
+class COMMA:
+    def __init__(self): pass
 
-        return str(value)
-
-class RND_Function():
-    def __init__(self, innerChain):
-        self.innerChain = innerChain
-    
-    def __str__(self):
-        chain: ChainedKeywords = ChainedKeywords(self.innerChain)
-        value = chain.evaluate()
-        if value > 0:
-            # return a random number
-            pass
-        elif value == 0:
-            # return the same random number as last time
-            pass
-        elif value < 0:
-            # reseed the rng with the input value and return a random number
-            pass
-
-        value = random.randrange(0, 1, 0.001) # just make a random number for rn, ignoring seed and stuff
-
-        return str(value)
-
-class SIN_Function():
-    def __init__(self, innerChain):
-        self.innerChain = innerChain
-    
-    def __str__(self):
-        chain: ChainedKeywords = ChainedKeywords(self.innerChain)
-        value = chain.evaluate()
-        value = math.sin(value)
-
-        return str(value)
-
-class SQR_Function():
-    def __init__(self, innerChain):
-        self.innerChain = innerChain
+class QUOTE:
+    def __init__(self, text: str=""):
+        self.text = text
 
     def __str__(self):
-        chain: ChainedKeywords = ChainedKeywords(self.innerChain)
-        value = chain.evaluate()
-        value = math.sqrt(value)
-
-        return str(value)
-
-class TAN_Function():
-    def __init__(self, innerChain):
-        self.innerChain = innerChain
-
-    def __str__(self):
-        chain: ChainedKeywords = ChainedKeywords(self.innerChain)
-        value = chain.evaluate()
-        value = math.tan(value)
-
-        return str(value)
+        processed = self.text
+        # remove the 1st char (which is an extra space)
+        processed = processed[1:]
+        
+        return f"\"{processed}\"" # surround it in quotes so the eval takes it as a quote

@@ -1,13 +1,17 @@
 import lexer
 import BASIC_Keywords
-
+import BASIC_Errors
 
 programCounter: int = -1 # start at -1 because we increment PC first meaning our first pc fetch will be 0
-program = lexer.Lexer("./program.bas")
-variables = {}
-BASIC_Keywords.VARIABLE.variables = variables # Link up the two dicts
+variables: dict[str, float] = {}
+programData: list[float] = []
+BASIC_Keywords.VARIABLE.VARIABLES = variables # Link up the two dicts
+BASIC_Keywords.BASIC_DATA.DATA = programData # Link up the two lists
 activeLoops: list[BASIC_Keywords.BASIC_Loop] = []
 returnStack: list[int] = []
+
+program = lexer.Lexer("./program.bas") # Lex the program AFTER we make the VARIABLES and DATA lists/dicts to not override
+
 
 def continueLoop(varName: str=None):
     global programCounter, activeLoops
@@ -35,9 +39,10 @@ def continueLoop(varName: str=None):
         
         break
 
+    if stopIndex == -1:
+        raise BASIC_Errors.NotInForLoopException(f"No FOR loop found for variable \"{varName}\"!")
     # remove all loops spawned inside a higher loop. im assuming this is how it would work and it makes sense to me
     activeLoops = activeLoops[0:stopIndex]
-
 
 while True:
     programCounter += 1
@@ -47,11 +52,18 @@ while True:
     modifyData: BASIC_Keywords.BASIC_ReturnData = executeLine.execute()
 
     if modifyData.addAddressToReturnStack == True: returnStack.append(programCounter)
-    if modifyData.pcSet != None: programCounter = modifyData.pcSet - 1 # minus 1 b/c our loop adds 1 immediately
+    if modifyData.pcSet != None:
+        modifyData.pcSet = int(modifyData.pcSet)
+        if program.getLine(modifyData.pcSet) == None:
+            raise BASIC_Errors.UndefinedLineException(f"Line number \"{modifyData.pcSet}\" not found in the program!")
+        programCounter = modifyData.pcSet - 1 # minus 1 b/c our loop adds 1 immediately
     if modifyData.variableSet != None: variables[modifyData.variableSet[0]] = modifyData.variableSet[1]
     if modifyData.stopExecution == True: break
     
-    if modifyData.returnToAddressFromReturnStack == True: programCounter = returnStack.pop()
+    if modifyData.returnToAddressFromReturnStack == True:
+        if len(returnStack) == 0:
+            raise BASIC_Errors.NotInSubroutubeException("Not in subroutine so we cannot return from one!")
+        programCounter = returnStack.pop()
 
     if modifyData.createdLoop != None:
         loop: BASIC_Keywords.BASIC_Loop = modifyData.createdLoop
