@@ -9,6 +9,7 @@ BASIC_Keywords.VARIABLE.VARIABLES = variables # Link up the two dicts
 BASIC_Keywords.BASIC_DATA.DATA = programData # Link up the two lists
 activeLoops: list[BASIC_Keywords.BASIC_Loop] = []
 returnStack: list[int] = []
+skippingLoopVarName = None
 
 program = lexer.Lexer("./program.bas") # Lex the program AFTER we make the VARIABLES and DATA lists/dicts to not override
 
@@ -49,8 +50,15 @@ while True:
     executeLine = program.getLine(programCounter)
     if executeLine == None: continue # Line doesn't exist
 
+    if skippingLoopVarName != None:
+        currentRetVarName = executeLine.getLoopContinueVarName()
+        # Variable names match, we have skipped the loop
+        if currentRetVarName == skippingLoopVarName: skippingLoopVarName = None
+        continue
+    
     modifyData: BASIC_Keywords.BASIC_ReturnData = executeLine.execute()
 
+    if modifyData.skipLoopVarName != None: skippingLoopVarName = modifyData.skipLoopVarName
     if modifyData.addAddressToReturnStack == True: returnStack.append(programCounter)
     if modifyData.pcSet != None:
         modifyData.pcSet = int(modifyData.pcSet)

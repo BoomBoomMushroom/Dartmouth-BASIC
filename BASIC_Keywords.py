@@ -272,11 +272,20 @@ class FOR_Statement:
         if index4Type != TO_Statement:
             raise BASIC_Errors.ExpectedKeywordTypeException(f"Expected a `to`, instead got a {index4Type}")
 
+        start = keywords[3]
         end, increment = keywords[4].execute(keywords[4:])
-        loop = BASIC_Loop(keywords[1].getName(), keywords[3], end, increment)
+        loop = BASIC_Loop(keywords[1].getName(), start, end, increment)
 
-        # check if loop is good, if not then return this skip data
-        # return BASIC_ReturnData(skipLoopVarName=loop.variableName)
+        isImpossible = False
+        if (end > start) and increment <= 0:
+            # impossible because we need to count up to get to the end but our step is 0 or negative 
+            isImpossible = True
+        if (start > end) and increment >= 0:
+            # impossible because we need to count down to get to the end but our step is 0 or positive 
+            isImpossible = True
+        
+        # Skip the loop since it is impossible
+        if isImpossible: return BASIC_ReturnData(skipLoopVarName=loop.variableName)
 
         VARIABLE.writeValue(loop.variableName, loop.start)
         return BASIC_ReturnData(createdLoop=loop)

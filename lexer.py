@@ -44,7 +44,8 @@ class Lexer:
 
         # We must consider previous replacements
         part = part.replace(" <  = ", " <= ") # " <  = " -> " <= "
-        part = part.replace(" >  = ", " >= ") # " >  = " -> " >= "
+        part = part.replace(" >  = ", " >= ") # " >  = " -> " >= " # support my unoffical but prefered one
+        part = part.replace(" =  > ", " => ") # " =  > " -> " => "
         part = part.replace(" <  > ", " <> ") # " <  > " -> " <> "
         return part
 
@@ -92,7 +93,8 @@ class Lexer:
         if part == "<": return BASIC_Keywords.LESS_Operator()
         if part == "<=": return BASIC_Keywords.LESSEQUAL_Operator()
         if part == ">": return BASIC_Keywords.GREATER_Operator()
-        if part == ">=": return BASIC_Keywords.GREATEREQUAL_Operator()
+        if part == ">=": return BASIC_Keywords.GREATEREQUAL_Operator() # This isn't official but i like it so its here
+        if part == "=>": return BASIC_Keywords.GREATEREQUAL_Operator()
         if part == "(": return BASIC_Keywords.GROUPING_OPEN_Operator()
         if part == ")": return BASIC_Keywords.GROUPING_CLOSE_Operator()
         return None
