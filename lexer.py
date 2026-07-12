@@ -201,7 +201,12 @@ class Lexer:
 
         hasEndInstruction = False
         previousLineNumber = -1
-        contentLines = contents.split("\n")
+        contentLinesRaw = contents.split("\n")
+        # remove empty lines
+        contentLines = []
+        for c in contentLinesRaw:
+            if len(c) == 0: continue
+            contentLines.append(c)
 
         for i,line in enumerate(contentLines):
             if len(line) == 0: continue
