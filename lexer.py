@@ -37,6 +37,8 @@ class Lexer:
 
     def getLine(self, lineNum: int) -> BASIC_Line:
         return self.lines.get(lineNum, None)
+    def getLineText(self, lineNum: int) -> str:
+        return self.linesText.get(lineNum, "")
 
     def spaceOutOperations(self, part: str):
         part = part.replace("+", " + ")
@@ -51,8 +53,7 @@ class Lexer:
 
         # We must consider previous replacements
         part = part.replace(" <  = ", " <= ") # " <  = " -> " <= "
-        part = part.replace(" >  = ", " >= ") # " >  = " -> " >= " # support my unoffical but prefered one
-        part = part.replace(" =  > ", " => ") # " =  > " -> " => "
+        part = part.replace(" >  = ", " >= ") # " >  = " -> " >= "
         part = part.replace(" <  > ", " <> ") # " <  > " -> " <> "
         return part
 
@@ -87,6 +88,8 @@ class Lexer:
         if part == "DATA": return BASIC_Keywords.DATA_Statement()
         if part == "READ": return BASIC_Keywords.READ_Statement()
         if part == "REM": return BASIC_Keywords.REM_Statement()
+
+        if part == "RESTORE": return BASIC_Keywords.RESTORE_Statement()
         return None
 
     def determineOperatorFromPart(self, part: str):
@@ -94,14 +97,13 @@ class Lexer:
         if part == "-": return BASIC_Keywords.SUB_Operator()
         if part == "*": return BASIC_Keywords.MULT_Operator()
         if part == "/": return BASIC_Keywords.DIV_Operator()
-        if part == "^": return BASIC_Keywords.EXP_Operator() # I want to use "^" instead of "?" for exponents
+        if part == "^": return BASIC_Keywords.EXP_Operator() # subsitute an "up arrow" for a carrat
         if part == "=": return BASIC_Keywords.EQUAL_Operator()
         if part == "<>": return BASIC_Keywords.NOTEQUAL_Operator()
         if part == "<": return BASIC_Keywords.LESS_Operator()
         if part == "<=": return BASIC_Keywords.LESSEQUAL_Operator()
         if part == ">": return BASIC_Keywords.GREATER_Operator()
-        if part == ">=": return BASIC_Keywords.GREATEREQUAL_Operator() # This isn't official but i like it so its here
-        if part == "=>": return BASIC_Keywords.GREATEREQUAL_Operator()
+        if part == ">=": return BASIC_Keywords.GREATEREQUAL_Operator()
         if part == "(": return BASIC_Keywords.GROUPING_OPEN_Operator()
         if part == ")": return BASIC_Keywords.GROUPING_CLOSE_Operator()
         return None
@@ -121,6 +123,8 @@ class Lexer:
     
     def determineLiteral(self, part: str) -> float:
         try:
+            partNoDotOrDash = part.replace(".","").replace("-","")
+            if len(partNoDotOrDash) > 9: return None # Numbers in BASIC cannot more than 9 digits!
             value = float(part)
             return value
         except ValueError as e: return None
@@ -136,7 +140,7 @@ class Lexer:
         
         inQuote = False
 
-        for part in parts:
+        for i, part in enumerate(parts):
             if len(part) == 0: continue
 
             punctuation = self.determinePunctuation(part)
@@ -175,20 +179,31 @@ class Lexer:
                 breakdown.append(literal)
                 continue
 
-            raise BASIC_Errors.UnknownKeyworkException(part)
+            basicErrorMessage = "ILLEGAL INSTRUCTION"
+            for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+                if part.startswith(letter) == False: continue
+                basicErrorMessage = "ILLEGAL VARIABLE"
+                break
+            raise BASIC_Errors.UnknownKeyworkException(part, basicErrorMessage)
         
+        if inQuote == True:
+            raise BASIC_Errors.QuoteNotEndedException("Quote not ended!", "INCORRECT FORMAT")
+
         return breakdown
+
+    # TODO: Check for each FOR loop that there is a NEXT statement for it, else throw "FOR WITHOUT NEXT"
+
 
     def parseProgramText(self, contents: str):
         # clear the program before we add stuff
         self.lines = {}
         self.linesText = {}
 
-        hasStopInstruction = False
+        hasEndInstruction = False
         previousLineNumber = -1
         contentLines = contents.split("\n")
 
-        for line in contentLines:
+        for i,line in enumerate(contentLines):
             if len(line) == 0: continue
             line = line.replace("(", " ( ")
             line = line.replace(")", " ) ")
@@ -199,22 +214,25 @@ class Lexer:
 
             parts = line.split(" ")
             lineNum = int(parts[0])
+            BASIC_Errors.CurrentExecutionInformation.lineNumber = lineNum
+            BASIC_Errors.CurrentExecutionInformation.lineText = line
+
             # todo: give them actual line numbers from the .bas file
-            if previousLineNumber > lineNum: raise BASIC_Errors.LineOutOfOrderException(f"`{line}` | {previousLineNumber=} {lineNum=}")
-            if self.lines.get(lineNum, None) != None: raise BASIC_Errors.LineRefedinitionException(f"Line {lineNum} is redefiend by: `{line}`")
+            if previousLineNumber > lineNum: raise BASIC_Errors.LineOutOfOrderException(f"`{line}` | {previousLineNumber=} {lineNum=}", "THIS ISN'T REALLY AN ERROR JUST ME BEING EVIL AND NEEDING TO CHANGE THIS TO INSERT IN AN EDITOR")
+            if self.lines.get(lineNum, None) != None: raise BASIC_Errors.LineRefedinitionException(f"Line {lineNum} is redefiend by: `{line}`", "THIS ISN'T REALLY AN ERROR JUST ME BEING EVIL AND NEEDING TO CHANGE THIS TO OVERWRITE IN AN EDITOR")
             
             keywords = None
             try: keywords = self.breakDownParts(parts[1:])
             except BASIC_Errors.UnknownKeyworkException as e:
-                groupingToolTip = ""
-                if ("(" in line) or (")" in line): groupingToolTip = "If you're grouping using parenthesis for math then make sure to put spaces between each one"
-                # handle it here so i can give the context, e.message is the part/keyword that was not found
-                raise BASIC_Errors.UnknownKeyworkException(f"Unknown keyword `{e.message}`! `{line}`\n{groupingToolTip}")
+                raise BASIC_Errors.UnknownKeyworkException(f"Unknown keyword `{e.message}`! `{line}`", e.basicErrorMessage)
             
             if keywords == None: raise Exception("Keywords is None??")
             if len(keywords) == 0: continue # REM comment probably caused this
-            if type(keywords[0]) == BASIC_Keywords.STOP_Statement: hasStopInstruction = True
-            if type(keywords[0]) == BASIC_Keywords.END_Statement: hasStopInstruction = True
+            isEndInstruction = (type(keywords[0]) == BASIC_Keywords.STOP_Statement) or (type(keywords[0]) == BASIC_Keywords.END_Statement)
+            if isEndInstruction:
+                if i != len(contentLines)-1:
+                    raise BASIC_Errors.PrematureENDException("END or STOP must be the last line of the program", "END IS NOT LAST")
+                else: hasEndInstruction = True
             if type(keywords[0]) == BASIC_Keywords.DATA_Statement: keywords[0].execute(keywords) # have this line parse and set the data!
 
             programLine = BASIC_Line(lineNum, keywords)
@@ -222,7 +240,8 @@ class Lexer:
             self.linesText[lineNum] = line
             previousLineNumber = lineNum
 
-        if hasStopInstruction == False:
-            raise BASIC_Errors.ExpectedKeywordTypeException("STOP Keyword not found in program! Make sure there is one to prevent infinite loops!")
+        if hasEndInstruction == False:
+            raise BASIC_Errors.ExpectedKeywordTypeException("END or STOP Keyword not found in program! A program must contain either one at the end of their program!", "NO END INSTRUCTION")
         
         pass
+

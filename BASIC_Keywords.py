@@ -10,6 +10,7 @@ def randomFloat(seed):
 
     return random.random()
 
+
 class BASIC_ReturnData:
     def __init__(
             self, pcSet: int=None, variableSet: tuple[str,float]=None, stopExecution=False, createdLoop=None,
@@ -45,11 +46,15 @@ class BASIC_DATA:
     @classmethod
     def extendData(cls, newData: list[float]):
         cls.DATA.extend(newData)
+
+        if len(cls.DATA) > 200:
+            # we're raising an error, 
+            raise BASIC_Errors.TooMuchDataException(f"A maximum of 200 numbers can be enter via DATA statements; You have {len(cls.DATA)} entries", "TOO MUCH DATA")
     
     @classmethod
     def readData(cls) -> float:
         if cls.POINTER >= len(cls.DATA):
-            raise BASIC_Errors.NoMoreDataException(f"No more data left to read! {cls.POINTER=}")
+            raise BASIC_Errors.NoMoreDataException(f"No more data left to read! {cls.POINTER=}", "NO DATA")
 
         out = cls.DATA[cls.POINTER]
         cls.POINTER += 1
@@ -77,6 +82,10 @@ class VARIABLE:
         if self.isNegative: value *= -1
 
         return value
+    
+    def execute(self, keywords):
+        keywords = [LET_Statement()] + keywords # append the LET before it and execute it
+        return keywords[0].execute(keywords)
 
 class ChainedKeywords:
     def __init__(self, keywords: list):
@@ -112,23 +121,24 @@ class ChainedKeywords:
             isVarOrLiteral = self.isTypeVarOrLiteral(kwType)
             if prevKwType != None:
                 if isOperation and self.isTypeOperation(prevKwType):
-                    raise BASIC_Errors.InvalidExpressionException("Cannot have two operations in a row!")
+                    raise BASIC_Errors.InvalidExpressionException("Cannot have two operations in a row!", "ILLEGAL FORMULA")
                 if isVarOrLiteral and self.isTypeVarOrLiteral(prevKwType):
                     if float(kw) < 0:
                         # Parsing with a minus gave us weird stuff, we can add an ADD operator to fix it
                         validatedKeywords.append( ADD_Operator() )
-                    else: raise BASIC_Errors.InvalidExpressionException("Cannot have two variables/literals in a row!")
+                    else:
+                        raise BASIC_Errors.InvalidExpressionException("Cannot have two variables/literals in a row!", "ILLEGAL FORMULA")
             
             if type(kw) == GROUPING_OPEN_Operator: openGroups += 1
             elif type(kw) == GROUPING_CLOSE_Operator: closeGroups += 1
             
-            if closeGroups > openGroups: raise BASIC_Errors.InvalidExpressionException("Invalid pairing of open-close group characters")
+            if closeGroups > openGroups: raise BASIC_Errors.InvalidExpressionException("Invalid pairing of open-close group characters", "ILLEGAL FORMULA")
 
             validatedKeywords.append(kw)
             prevKwType = kwType
 
         # after we've gone through all the keywords check if it's valid
-        if closeGroups != openGroups: raise BASIC_Errors.InvalidExpressionException("Invalid pairing of open-close group characters")
+        if closeGroups != openGroups: raise BASIC_Errors.InvalidExpressionException("Invalid pairing of open-close group characters", "ILLEGAL FORMULA")
         self.keywords = validatedKeywords
         return True # We've made it here, our chain of keywords is valid!
 
@@ -145,14 +155,14 @@ class ChainedKeywords:
 
             if prevKwType != None:
                 if isOperation and self.isTypeOperation(prevKwType):
-                    raise BASIC_Errors.InvalidExpressionException("Cannot have two operations in a row!")
+                    raise BASIC_Errors.InvalidExpressionException("Cannot have two operations in a row!", "ILLEGAL FORMULA")
                 if isVarOrLiteral and self.isTypeVarOrLiteral(prevKwType):
-                    raise BASIC_Errors.InvalidExpressionException("Cannot have two variables/literals in a row!")
+                    raise BASIC_Errors.InvalidExpressionException("Cannot have two variables/literals in a row!", "ILLEGAL FORMULA")
             
             if type(kw) == GROUPING_OPEN_Operator: openGroups += 1
             elif type(kw) == GROUPING_CLOSE_Operator: closeGroups += 1
             
-            if closeGroups > openGroups: raise BASIC_Errors.InvalidExpressionException("Invalid pairing of open-close group characters")
+            if closeGroups > openGroups: raise BASIC_Errors.InvalidExpressionException("Invalid pairing of open-close group characters", "ILLEGAL FORMULA")
             
             toAdd = f" {str(kw)} "
             if isVarOrLiteral: toAdd = f" ({toAdd[1:]})" # surround literals w/ parentheses so -3 ** 2 = 9 not -9
@@ -161,7 +171,7 @@ class ChainedKeywords:
             prevKwType = kwType
 
         # after we've gone through all the keywords check if it's valid
-        if closeGroups != openGroups: raise BASIC_Errors.InvalidExpressionException("Invalid pairing of open-close group characters")
+        if closeGroups != openGroups: raise BASIC_Errors.InvalidExpressionException("Invalid pairing of open-close group characters", "ILLEGAL FORMULA")
         
         safeFunctions = {
             "abs": abs,
@@ -192,7 +202,7 @@ class ListKeywords:
 
             if expectComma == True:
                 if kwType != COMMA:
-                    raise BASIC_Errors.ExpectedKeywordTypeException(f"Expected a Comma, instead got {kwType}!")
+                    raise BASIC_Errors.ExpectedKeywordTypeException(f"Expected a Comma, instead got {kwType}!", "ILLEGAL FORMULA")
                 # else we're good, continue
                 expectComma = False
             else:
@@ -202,7 +212,7 @@ class ListKeywords:
 
                 if passes == False:
                     orVar = " or Variable Name" if self.allowVariables else ""
-                    raise BASIC_Errors.ExpectedKeywordTypeException(f"Expected a Literal{orVar}, instead got {kwType}!")
+                    raise BASIC_Errors.ExpectedKeywordTypeException(f"Expected a Literal{orVar}, instead got {kwType}!", "ILLEGAL FORMULA")
                 # else we're good
                 expectComma = True
         
@@ -258,23 +268,28 @@ class FOR_Statement:
         # index 5 is the ending
         # (optional)
         # index 6 is the `step`
-        # index 7 is the step size
+        # index 7 is the step size\
+
+        toIndex = -1
+        for i,kw in enumerate(keywords):
+            if type(kw) == TO_Statement:
+                toIndex = i
+                break
+        
+        if toIndex == -1: raise BASIC_Errors.ExpectedKeywordTypeException(f"Expected a `TO` keyword, but didn't find one", "INCORRECT FORMAT")
+        toStatement: TO_Statement = keywords[toIndex]
+        
         index1Type = type(keywords[1])
         index2Type = type(keywords[2])
-        index3Type = type(keywords[3])
-        index4Type = type(keywords[4])
         if index1Type != VARIABLE:
-            raise BASIC_Errors.ExpectedKeywordTypeException(f"Expected a variable name, instead got a {index1Type}")
+            raise BASIC_Errors.ExpectedKeywordTypeException(f"Expected a variable name, instead got a {index1Type}", "ILLEGAL VARIABLE")
         if index2Type != EQUAL_Operator:
-            raise BASIC_Errors.ExpectedKeywordTypeException(f"Expected an equal sign, instead got a {index2Type}")
-        if index3Type != float:
-            raise BASIC_Errors.ExpectedKeywordTypeException(f"Expected a literal, instead got a {index3Type}")
-        if index4Type != TO_Statement:
-            raise BASIC_Errors.ExpectedKeywordTypeException(f"Expected a `to`, instead got a {index4Type}")
-
-        start = keywords[3]
-        end, increment = keywords[4].execute(keywords[4:])
-        loop = BASIC_Loop(keywords[1].getName(), start, end, increment)
+            raise BASIC_Errors.ExpectedKeywordTypeException(f"Expected an equal sign, instead got a {index2Type}", "INCORRECT FORMAT")
+        
+        variable: VARIABLE = keywords[1]
+        start = ChainedKeywords(keywords[2+1:toIndex]).evaluate()
+        end, increment = toStatement.execute(keywords[toIndex:])
+        loop = BASIC_Loop(variable.getName(), start, end, increment)
 
         isImpossible = False
         if (end > start) and increment <= 0:
@@ -298,19 +313,22 @@ class TO_Statement:
         # index 0 is the `to`
         # index 1 is the end
         # index 2 is optionally a `step`
+        stepIndex = -1
+        for i,kw in enumerate(keywords):
+            if type(kw) == STEP_Statement:
+                stepIndex = i
+                break
+        
+        stepStatement: TO_Statement = None
+        if stepIndex != -1: stepStatement: TO_Statement = keywords[stepIndex]
+
+        chainKeywords = keywords[1:]
+        if stepIndex != -1: chainKeywords = keywords[1:stepIndex]
+        end: float = ChainedKeywords(chainKeywords).evaluate()
+
         increment: float = 1
-        end: float = keywords[1]
-
-        index1Type = type(keywords[1])
-        if index1Type != float:
-            raise BASIC_Errors.ExpectedKeywordTypeException(f"Expected a literal, instead got a {index1Type}")
-        if len(keywords) > 2:
-            index2Type = type(keywords[2])
-            if index2Type != STEP_Statement:
-                raise BASIC_Errors.ExpectedKeywordTypeException(f"Expected a `step`, instead got a {index2Type}")
-            
-            increment = keywords[2].execute(keywords[2:])
-
+        if stepStatement != None: increment = stepStatement.execute(keywords[stepIndex:])
+        
         return end, increment
 
 class STEP_Statement:
@@ -319,11 +337,9 @@ class STEP_Statement:
 
     def execute(self, keywords):
         # index 0 is the `step`
-        # index 1 is the step size
-        index1Type = type(keywords[1])
-        if index1Type != float:
-            raise BASIC_Errors.ExpectedKeywordTypeException(f"Expected a literal, instead got a {index1Type}")
-        return keywords[1]
+        # everything after is the step size
+        value = ChainedKeywords(keywords[1:]).evaluate()
+        return value
 
 class NEXT_Statement:
     def __init__(self):
@@ -332,9 +348,10 @@ class NEXT_Statement:
     def execute(self, keywords):
         # index 0 is the `next` keyword
         # index 1 is the variable to increment
-        index1Type = type(keywords[1])
+        index1Type = None
+        if len(keywords) != 1: index1Type = type(keywords[1])
         if index1Type != VARIABLE:
-            raise BASIC_Errors.ExpectedKeywordTypeException(f"Expected a variable name, instead got a {index1Type}")
+            raise BASIC_Errors.ExpectedKeywordTypeException(f"Expected a variable name, instead got a {index1Type}", "INCORRECT FORMAT")
 
         var: VARIABLE = keywords[1]
         return BASIC_ReturnData(continueLoopVarName=var.getName())
@@ -351,7 +368,7 @@ class GOSUB_Statement:
         if index1Type == VARIABLE: address = keywords[1].getValue()
         elif index1Type == float: address = keywords[1]
         else:
-            raise BASIC_Errors.ExpectedKeywordTypeException(f"Expected a literal or variable name, instead got a {index1Type}")
+            raise BASIC_Errors.ExpectedKeywordTypeException(f"Expected a literal or variable name, instead got a {index1Type}", "INCORRECT FORMAT")
 
         return BASIC_ReturnData(pcSet=address, addAddressToReturnStack=True)
 
@@ -385,7 +402,7 @@ class IF_Statement:
                 thenIndex = i
                 break
         if thenIndex == -1:
-            raise BASIC_Errors.ExpectedKeywordTypeException("Expected THEN after IF statement!")
+            raise BASIC_Errors.ExpectedKeywordTypeException("Expected THEN after IF statement!", "INCORRECT FORMAT")
 
         chained = ChainedKeywords(keywords[1:thenIndex])
         result = chained.evaluate()
@@ -412,9 +429,9 @@ class LET_Statement:
         typeKeyword1 = type(keywords[1])
         typeKeyword2 = type(keywords[2])
         if typeKeyword1 != VARIABLE:
-            raise BASIC_Errors.ExpectedKeywordTypeException(f"Expected a variable name, instead got a {typeKeyword1}")
+            raise BASIC_Errors.ExpectedKeywordTypeException(f"Expected a variable name, instead got a {typeKeyword1}", "ILLEGAL VARIABLE")
         if typeKeyword2 != EQUAL_Operator:
-            raise BASIC_Errors.ExpectedKeywordTypeException(f"Expected an equals sign, instead got a {typeKeyword2}")
+            raise BASIC_Errors.ExpectedKeywordTypeException(f"Expected an equals sign, instead got a {typeKeyword2}", "INCORRECT FORMAT")
         
         chained = ChainedKeywords(keywords[3:])
         setValue = chained.evaluate()
@@ -431,9 +448,9 @@ class PRINT_Statement:
         # index 0 is our print class
         # all the other indexes is what we print
         chains = []
-        iterateKeywords = [SEMICOLON()] + keywords[1:] # add a semicolon at the front to latch a starting point
+        iterateKeywords = [COMMA()] + keywords[1:] # add a comma at the front to latch a starting point
         for kw in iterateKeywords:
-            if type(kw) == SEMICOLON:
+            if type(kw) == COMMA:
                 chains.append([])
                 continue
             chains[-1].append(kw) # add to the most recent chain
@@ -485,6 +502,13 @@ class REM_Statement:
         # How is this running? This is to write comments in BASIC
         pass
 
+
+#    Newer BASIC commands 
+class RESTORE_Statement:
+    def __init__(self): pass
+    def execute(self, keywords):
+        # index 0 is the `RESTORE` keyword
+        BASIC_DATA.POINTER = 0 # Resets the pointer to 0
 
 # Operators
 class ADD_Operator:
@@ -610,3 +634,4 @@ class QUOTE:
         processed = processed[1:]
         
         return f"\"{processed}\"" # surround it in quotes so the eval takes it as a quote
+

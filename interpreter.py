@@ -2,8 +2,13 @@ import lexer
 import BASIC_Keywords
 import BASIC_Errors
 
+# The Dartmouth BASIC manual: https://www.dartmouth.edu/basicfifty/basicmanual_1964.pdf
+
 class Interpreter:
     def __init__(self, programText: str=None, programFile: str=None):
+        self.MAX_FOR_LOOP_COUNT = 2 ** 99 # idk the actual number, so we'll make it really high so i dont hit the limit
+        self.MAX_GOSUB_NESTED_COUNT = 2 ** 99 # i also dont know this number
+
         self.program = lexer.Lexer()
         self.programCounter: int = -1 # start at -1 because we increment PC first meaning our first pc fetch will be 0
         self.variables: dict[str, float] = {}
@@ -43,13 +48,18 @@ class Interpreter:
             break
 
         if stopIndex == -1:
-            raise BASIC_Errors.NotInForLoopException(f"No FOR loop found for variable \"{varName}\"!")
+            raise BASIC_Errors.NotInForLoopException(f"No FOR loop found for variable \"{varName}\"!", "NOT MATCH WITH FOR")
         # remove all loops spawned inside a higher loop. im assuming this is how it would work and it makes sense to me
         self.activeLoops = self.activeLoops[0:stopIndex]
+
+    def updateRuntimeInfo(self):
+        BASIC_Errors.CurrentExecutionInformation.lineNumber = self.programCounter
+        BASIC_Errors.CurrentExecutionInformation.lineText = self.program.getLineText(self.programCounter)
 
     def RUN(self):
         while True:
             self.programCounter += 1
+            self.updateRuntimeInfo()
             executeLine = self.program.getLine(self.programCounter)
             if executeLine == None: continue # Line doesn't exist
 
@@ -62,24 +72,30 @@ class Interpreter:
             modifyData: BASIC_Keywords.BASIC_ReturnData = executeLine.execute()
 
             if modifyData.skipLoopVarName != None: self.skippingLoopVarName = modifyData.skipLoopVarName
-            if modifyData.addAddressToReturnStack == True: self.returnStack.append(self.programCounter)
+            if modifyData.addAddressToReturnStack == True:
+                if len(self.returnStack) >= self.MAX_GOSUB_NESTED_COUNT:
+                    raise BASIC_Errors.GOSUBNestedTooDeeplyException(f"GOSUB is nexted too deeply, {self.MAX_GOSUB_NESTED_COUNT=}", "GOSB NESTED TOO DEEPLY")
+                self.returnStack.append(self.programCounter)
             if modifyData.pcSet != None:
                 modifyData.pcSet = int(modifyData.pcSet)
                 if self.program.getLine(modifyData.pcSet) == None:
-                    raise BASIC_Errors.UndefinedLineException(f"Line number \"{modifyData.pcSet}\" not found in the program!")
+                    raise BASIC_Errors.UndefinedLineException(f"Line number \"{modifyData.pcSet}\" not found in the program!", "UNDEFINED NUMBER")
                 self.programCounter = modifyData.pcSet - 1 # minus 1 b/c our loop adds 1 immediately
             if modifyData.variableSet != None: self.variables[modifyData.variableSet[0]] = modifyData.variableSet[1]
             if modifyData.stopExecution == True: break
             
             if modifyData.returnToAddressFromReturnStack == True:
                 if len(self.returnStack) == 0:
-                    raise BASIC_Errors.NotInSubroutubeException("Not in subroutine so we cannot return from one!")
+                    raise BASIC_Errors.NotInSubroutubeException("Not in subroutine so we cannot return from one!", "RETURN BEFORE GOSUB")
                 self.programCounter = self.returnStack.pop()
 
             if modifyData.createdLoop != None:
                 loop: BASIC_Keywords.BASIC_Loop = modifyData.createdLoop
                 loop.setReturnPC(self.programCounter)
                 self.activeLoops.append(loop)
+
+                if len(self.activeLoops) >= self.MAX_FOR_LOOP_COUNT:
+                    raise BASIC_Errors.TooManyForLoopsException(f"Maximum number of FOR loops exceeded; {self.MAX_FOR_LOOP_COUNT=}", "TOO MANY LOOPS")
             if modifyData.continueLoopVarName != None: self.continueLoop(modifyData.continueLoopVarName)
 
 
