@@ -1,0 +1,8 @@
+Hello welcome to my "How to compile this code as an exe while on fedora 44" tutorial
+`sudo dnf install wine`
+`wget https://www.python.org/ftp/python/3.12.4/python-3.12.4-amd64.exe`
+`wine python-3.12.4-amd64.exe`
+`wine python -m pip install pyinstaller`
+`wine ~/.wine/drive_c/users/YOUR_USER_NAME/AppData/Local/Programs/Python/Python312/Scripts/pyinstaller.exe --onefile "PATH_TO_interpreter.py`
+
+okay yippie its done!

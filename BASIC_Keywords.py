@@ -185,7 +185,12 @@ class ChainedKeywords:
             "sqr": math.sqrt,
             "tan": math.tan,
         }
-        result = eval(outEquation, {}, safeFunctions) # yes ik eval is evil but i REALLY dont want to write a parser atm 😭
+
+        try:
+            # yes ik eval is evil but i REALLY dont want to write a parser atm 😭
+            result = eval(outEquation, {}, safeFunctions)
+        except SyntaxError as e:
+            raise BASIC_Errors.InvalidExpressionException("Error computing value!", "ILLEGAL FORMULA")
         return result
 
 class ListKeywords:

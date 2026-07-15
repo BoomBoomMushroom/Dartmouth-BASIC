@@ -12,6 +12,7 @@ class CurrentExecutionInformation:
 class BASIC_Exception(Exception):
     def __init__(self, message, basicErrorMessage: str):
         self.message = message + "\n" + CurrentExecutionInformation.generateLineInfo()
+        self.basicErrorMessage = basicErrorMessage
         if basicErrorMessage != None:
             self.message += f"\n{basicErrorMessage} IN {CurrentExecutionInformation.lineNumber}"
         super().__init__(self.message)
