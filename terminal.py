@@ -1,4 +1,5 @@
 import time
+import os
 
 from interpreter import Interpreter
 import BASIC_Errors
@@ -30,6 +31,8 @@ class Teletype:
         out = "\n".join(noNone)
         return out
 
+    def getFilePath(self) -> str: return f"./users/{self.userNumber}/{self.problemNumber}"
+
     def getInput(self, message: str=""):
         out = input(message)
         return out
@@ -41,11 +44,11 @@ class Teletype:
             return
         elif self.isInited == False: return
     
+        prgm = self.getProgram()
         if msgUpper == "RUN":
             try:
                 print("\n", end="") # space it out
                 t1 = time.time()
-                prgm = self.getProgram()
                 interpreter = Interpreter(programText=prgm)
                 t2 = time.time()
                 seconds = int( t2-t1 )
@@ -61,10 +64,14 @@ class Teletype:
         elif msgUpper == "LIST":
             # print out the current program
             print("\n"*1, end="")
-            print(self.getProgram())
+            print(prgm)
             print("\n"*1, end="")
         elif msgUpper == "SAVE":
-            pass # todo: save the program as a file
+            path = self.getFilePath()
+            os.makedirs(os.path.dirname(path), exist_ok=True) # force folders to exist
+            with open(path, "w") as f:
+                f.write(prgm)
+                print("SUCCESSFULLY SAVED")
         elif msgUpper == "STOP":
             exit()
         else:
@@ -132,9 +139,20 @@ class Teletype:
                 continue
             break
 
-        # If we type OLD, then we must fetch the program and load it into `self.lines`, then print "READY"
-
         self.isInited = True
+
+        # If we type OLD, then we must fetch the program and load it into `self.lines`, then print "READY"
+        if self.isType == False:
+            path = self.getFilePath()
+            if os.path.exists(path) == False:
+                raise FileExistsError(f"File does not exist under {self.userNumber=}, {self.problemNumber=}")
+            with open(path, "r") as f:
+                self.lines = []
+                lines = f.read().split("\n")
+                for l in lines:
+                    # run onCommand AFTER self.isInited=True so we can actually get past the init part
+                    self.onCommand(l) # adds the line to the program
+
         print("READY.")
 
 
