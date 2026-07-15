@@ -31,7 +31,7 @@ class Teletype:
         out = "\n".join(noNone)
         return out
 
-    def getFilePath(self) -> str: return f"./users/{self.userNumber}/{self.problemNumber}"
+    def getFilePath(self) -> str: return f"./users/{self.userNumber}/{self.problemNumber}.bas"
 
     def getInput(self, message: str=""):
         out = input(message)

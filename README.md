@@ -18,6 +18,8 @@ Enter your id (any 6 digit number w/ leading 0s count)
 
 Enter your program number, any 6 or less character string A-Z, 0-9 will work
 
+And now select if you want to load a program by selecting `OLD` or type a new progrma by selecting `TYPE`
+
 Now type out a program
 
 Type `LIST` to view the current program as is
@@ -25,3 +27,5 @@ Type `LIST` to view the current program as is
 Type `RUN` to run the program!
 
 Type `STOP` to exit
+
+You can also type `SAVE` to save your program inside of /users/USER_NUM/PROGRAM_NUM.bas which can be loaded if you use the `OLD` option in the `HELLO` information collection
